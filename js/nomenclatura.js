@@ -3,6 +3,20 @@
 // de «Nombra rápido».
 window.CC = window.CC || {};
 
+// Azar del juego. En el modo en línea los dos dispositivos usan la misma semilla
+// (CC.seed) y así barajan igual: solo hace falta enviar las jugadas, no la partida entera.
+CC.rand = Math.random;
+CC.seed = function (seed) {
+  var a = seed >>> 0;
+  CC.rand = function () {
+    a = (a + 0x6D2B79F5) >>> 0;
+    var t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
 (function () {
   var PREFIXES = { 1: 'mono', 2: 'di', 3: 'tri', 4: 'tetra' };
   var ROMAN = { 1: 'I', 2: 'II', 3: 'III', 4: 'IV' };
@@ -24,7 +38,7 @@ window.CC = window.CC || {};
 
   function shuffle(a) {
     for (var i = a.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
+      var j = Math.floor(CC.rand() * (i + 1));
       var x = a[i]; a[i] = a[j]; a[j] = x;
     }
     return a;
@@ -105,7 +119,7 @@ window.CC = window.CC || {};
     var info = buildCompoundInfo(cation, anion);
     var modes = ['FORMULA_TO_SYS', 'NAME_TO_FORMULA'];
     if (level === 'ADVANCED' && info.isVariable) modes.push('FORMULA_TO_STOCK');
-    var mode = modes[Math.floor(Math.random() * modes.length)];
+    var mode = modes[Math.floor(CC.rand() * modes.length)];
 
     var headerHTML = info.formulaHTML;
     var promptText = 'Elige el nombre con prefijos';

@@ -1,29 +1,120 @@
 // Motor del juego: baraja, reglas del reactor, combos, retos y jugador automático.
-// No toca la página: avisa a la interfaz con onStateChange(estado) y onEvent(evento).
+// No toca la página. Cada cosa que pasa se avisa con onEvent({ type, ..., snapshot }),
+// donde snapshot es una copia del estado justo después de ese paso: la interfaz los
+// anima en orden, uno detrás de otro, y el motor espera a que acabe (waitIdle) antes de
+// que juegue el ordenador.
+//
+// Reactor: lista de átomos. Cada elemento lleva TODOS sus números de oxidación posibles
+// (Fe +2/+3, Cu +1/+2, H +1/−1). El compuesto se cierra solo en cuanto alguna
+// combinación de números de oxidación da carga neta cero con la fórmula simplificada.
 window.CC = window.CC || {};
 
 (function () {
   function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
   function t(s, v) { return window.i18n ? window.i18n.t(s, v) : s; }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
   var HAND_SIZE = 5;
   var STAGNATION_LIMIT = 3;
 
-  function GameEngine(config, onStateChange, onEvent) {
+  // Máximo de átomos de un elemento que puede llegar a tener un compuesto de la baraja
+  // (O: 3 en Al2O3; H: 3 en AlH3; Ca: 1…). Sirve para no dejar crecer un reactor imposible.
+  var MAX_COUNT = {};
+  function maxCount(symbol) {
+    if (MAX_COUNT[symbol]) return MAX_COUNT[symbol];
+    var mine = CC.ELEMENTS[symbol].numbers, best = 1;
+    Object.keys(CC.ELEMENTS).forEach(function (other) {
+      if (other === symbol) return;
+      CC.ELEMENTS[other].numbers.forEach(function (co) {
+        mine.forEach(function (c) {
+          if (c * co >= 0) return;
+          best = Math.max(best, Math.abs(co) / gcd(Math.abs(c), Math.abs(co)));
+        });
+      });
+    });
+    return (MAX_COUNT[symbol] = best);
+  }
+
+  // Analiza una lista de átomos [{symbol, numbers}].
+  // valid: todavía puede acabar en un compuesto; closed: ya es un compuesto neutro.
+  function analyze(atoms) {
+    var groups = {}, order = [];
+    atoms.forEach(function (a) {
+      if (!groups[a.symbol]) { groups[a.symbol] = { symbol: a.symbol, count: 0, numbers: a.numbers.slice() }; order.push(a.symbol); }
+      groups[a.symbol].count += 1;
+    });
+    var res = { valid: true, closed: false, groups: order.map(function (s) { return groups[s]; }), netOptions: [], assignment: null };
+    if (order.length === 0) { res.netOptions = [0]; return res; }
+    if (order.length > 2) { res.valid = false; res.reason = t('Solo compuestos binarios: dos elementos.'); return res; }
+    if (order.length === 1) {
+      var g = groups[order[0]];
+      if (g.count > maxCount(g.symbol)) { res.valid = false; res.reason = t('Ya hay demasiados átomos de {s}.', { s: g.symbol }); return res; }
+      g.numbers.forEach(function (n) { if (res.netOptions.indexOf(n * g.count) === -1) res.netOptions.push(n * g.count); });
+      return res;
+    }
+    var A = groups[order[0]], B = groups[order[1]], feasible = [];
+    A.numbers.forEach(function (a) {
+      B.numbers.forEach(function (b) {
+        if (a * b >= 0) return;
+        var d = gcd(Math.abs(a), Math.abs(b));
+        var nA = Math.abs(b) / d, nB = Math.abs(a) / d;
+        if (A.count <= nA && B.count <= nB) feasible.push({ a: a, b: b, closed: A.count === nA && B.count === nB });
+      });
+    });
+    if (!feasible.length) {
+      var sameSign = A.numbers.every(function (a) { return B.numbers.every(function (b) { return a * b > 0; }); });
+      res.valid = false;
+      res.reason = sameSign ? t('{a} y {b} tienen el mismo signo: no pueden formar un compuesto.', { a: A.symbol, b: B.symbol })
+                            : t('Sobra un átomo: la fórmula no se puede simplificar así.');
+      return res;
+    }
+    feasible.forEach(function (f) {
+      var net = f.a * A.count + f.b * B.count;
+      if (res.netOptions.indexOf(net) === -1) res.netOptions.push(net);
+    });
+    var close = feasible.find(function (f) { return f.closed; });
+    if (close) {
+      res.closed = true;
+      var cat = close.a > 0 ? { symbol: A.symbol, charge: close.a, count: A.count } : { symbol: B.symbol, charge: close.b, count: B.count };
+      var ani = close.a > 0 ? { symbol: B.symbol, charge: close.b, count: B.count } : { symbol: A.symbol, charge: close.a, count: A.count };
+      res.assignment = { cation: cat, anion: ani };
+      res.netOptions = [0];
+    }
+    return res;
+  }
+
+  function GameEngine(config, onEvent) {
     this.config = {
       level: config.level || 'BASIC',
       blindMode: !!config.blindMode,
       mode: config.mode || 'BOT',
       botLevel: config.botLevel || 'CHEMIST'
     };
-    this.onStateChange = onStateChange;
     this.onEvent = onEvent;
+    // Con semilla (modo en línea) los dos dispositivos reparten exactamente igual.
+    if (config.seed) CC.seed(config.seed); else CC.rand = Math.random;
     this.state = null;
     this.destroyed = false;
     this.quizSeq = 0;
+    this.waitIdle = function (cb) { cb(); };
   }
 
+  GameEngine.analyze = analyze;
   GameEngine.prototype.destroy = function () { this.destroyed = true; };
+
+  GameEngine.prototype.emit = function (type, data) {
+    if (this.destroyed || !this.onEvent) return;
+    var ev = data || {};
+    ev.type = type;
+    ev.snapshot = clone(this.state);
+    this.onEvent(ev);
+  };
+
+  // Espera a que la interfaz termine de animar y luego otro rato (para el ordenador).
+  GameEngine.prototype.later = function (ms, fn) {
+    var self = this;
+    this.waitIdle(function () { setTimeout(function () { if (!self.destroyed) fn(); }, ms); });
+  };
 
   GameEngine.prototype.initGame = function (playerNames) {
     var deck = this.buildDeck();
@@ -38,414 +129,258 @@ window.CC = window.CC || {};
       ],
       deck: deck,
       discard: [],
-      reactor: this.createEmptyReactor(),
+      reactor: this.emptyReactor(),
       quiz: null,
       synthesizedHistory: [],
-      lastAction: t('Empieza {n}. El reactor está vacío.', { n: playerNames[0] })
+      lastAction: t('Empieza {n}.', { n: playerNames[0] })
     };
-    this.emitState();
+    this.emit('START');
   };
 
-  GameEngine.prototype.createEmptyReactor = function () {
-    return { status: 'EMPTY', cation: null, anion: null, pendingH: null,
-             cardsInPile: [], atomHistory: [], netCharge: 0, stagnationCounter: 0 };
+  GameEngine.prototype.emptyReactor = function () {
+    return { status: 'EMPTY', atoms: [], cards: [], stagnation: 0, view: analyze([]) };
   };
 
   GameEngine.prototype.buildDeck = function () {
     var deck = [], uid = 1, self = this;
     Object.keys(CC.ELEMENTS).forEach(function (key) {
-      var el = CC.ELEMENTS[key];
-      var cards = [];
+      var el = CC.ELEMENTS[key], cards = [];
       for (var i = 0; i < el.count; i++) {
-        var numbers;
-        if (el.category === 'HYDROGEN') numbers = [1, -1];
-        else if (self.config.level === 'BASIC') numbers = [el.numbersBasic.length === el.count ? el.numbersBasic[i] : el.numbersBasic[0]];
-        else numbers = el.numbersAdvanced.slice();
-        cards.push({ id: 'c_' + (uid++), type: 'ELEMENT', symbol: el.symbol, name: el.name,
-                     category: el.category, valences: numbers, blindModeType: null });
+        cards.push({ id: 'c' + (uid++), type: 'ELEMENT', symbol: el.symbol, name: el.name,
+                     category: el.category, numbers: el.numbers.slice(), blind: null });
       }
       if (self.config.blindMode && cards.length >= 2) {
         var idx = CC.shuffle(cards.map(function (_, k) { return k; }));
-        cards[idx[0]].blindModeType = 'NO_SYMBOL';
-        cards[idx[1]].blindModeType = 'NO_NAME';
+        cards[idx[0]].blind = 'SYMBOL';
+        cards[idx[1]].blind = 'NAME';
       }
       deck.push.apply(deck, cards);
     });
     CC.SPECIAL_CARDS.forEach(function (sp) {
       for (var i = 0; i < sp.count; i++) {
-        deck.push({ id: 'c_' + (uid++), type: 'SPECIAL', specialType: sp.specialType, symbol: sp.symbol,
-                    name: sp.name, desc: sp.desc, category: 'SPECIAL', valences: [], blindModeType: null });
+        deck.push({ id: 'c' + (uid++), type: 'SPECIAL', specialType: sp.specialType, symbol: sp.symbol,
+                    name: sp.name, desc: sp.desc, category: 'SPECIAL', numbers: [], blind: null });
       }
     });
     return CC.shuffle(deck);
   };
 
-  // Número de oxidación que toma el hidrógeno según lo que ya hay en el reactor.
-  GameEngine.prototype.resolveHydrogen = function (r) {
-    if (r.cation && r.cation.symbol === 'H') return r.cation.charge;
-    if (r.anion && r.anion.symbol === 'H') return r.anion.charge;
-    var existing = r.cation || r.anion;
-    return existing.charge > 0 ? -1 : 1;
+  // Átomo que añadiría una carta (null si es Electrólisis o no hay nada que copiar).
+  GameEngine.prototype.atomFor = function (card, isoSymbol) {
+    var r = this.state.reactor;
+    if (card.type === 'ELEMENT') return { symbol: card.symbol, numbers: card.numbers.slice(), cardId: card.id };
+    if (card.specialType === 'CATALYST') {
+      var last = r.atoms[r.atoms.length - 1];
+      return last ? { symbol: last.symbol, numbers: last.numbers.slice(), cardId: card.id, copy: true } : null;
+    }
+    if (card.specialType === 'ISOTOPE') {
+      var opts = this.isotopeOptions();
+      var sym = opts.indexOf(isoSymbol) !== -1 ? isoSymbol : opts[0];
+      if (!sym) return null;
+      var src = r.atoms.find(function (a) { return a.symbol === sym; });
+      return { symbol: sym, numbers: src.numbers.slice(), cardId: card.id, copy: true };
+    }
+    return null;
   };
 
-  GameEngine.prototype.canPlayCard = function (card, forcedCharge) {
-    var r = this.state.reactor;
-    if (forcedCharge === undefined) forcedCharge = null;
+  GameEngine.prototype.isotopeOptions = function () {
+    var r = this.state.reactor, seen = [], self = this;
+    r.atoms.forEach(function (a) {
+      if (seen.indexOf(a.symbol) !== -1) return;
+      if (analyze(r.atoms.concat([{ symbol: a.symbol, numbers: a.numbers }])).valid) seen.push(a.symbol);
+    });
+    return seen;
+  };
 
+  GameEngine.prototype.canPlayCard = function (card) {
+    var r = this.state.reactor;
     if (card.type === 'SPECIAL') {
       if (r.status === 'EMPTY') return { valid: false, reason: t('El reactor está vacío.') };
-      if (card.specialType === 'ELECTROLYSIS') {
-        return r.atomHistory.length > 0 ? { valid: true } : { valid: false, reason: t('No hay átomos que quitar.') };
-      }
-      if (card.specialType === 'CATALYST') {
-        var last = r.atomHistory[r.atomHistory.length - 1];
-        if (!last) return { valid: false, reason: t('No hay ningún átomo que repetir.') };
-        var dummy = { type: 'ELEMENT', symbol: last.symbol,
-                      category: last.isHydrogen ? 'HYDROGEN' : (last.charge > 0 ? 'METAL' : 'NON_METAL'),
-                      valences: [last.charge] };
-        return this.canPlayElement(dummy, last.charge);
-      }
+      if (card.specialType === 'ELECTROLYSIS') return { valid: true };
       if (card.specialType === 'ISOTOPE') {
-        var opts = this.getIsotopeOptions();
-        return opts.length > 0 ? { valid: true, isotopeOptions: opts }
-                               : { valid: false, reason: t('Ningún elemento del reactor admite más átomos.') };
+        var opts = this.isotopeOptions();
+        return opts.length ? { valid: true, isotopeOptions: opts } : { valid: false, reason: t('Ningún elemento del reactor admite más átomos.') };
       }
     }
-
-    var candidates = forcedCharge !== null ? [forcedCharge] : card.valences;
-    for (var i = 0; i < candidates.length; i++) {
-      var check = this.canPlayElement(card, candidates[i]);
-      if (check.valid) return check;
-    }
-    return this.canPlayElement(card, candidates[0]);
+    var atom = this.atomFor(card);
+    if (!atom) return { valid: false, reason: t('No hay ningún átomo que repetir.') };
+    var a = analyze(r.atoms.concat([atom]));
+    return a.valid ? { valid: true, closes: a.closed } : { valid: false, reason: a.reason };
   };
 
-  GameEngine.prototype.canPlayElement = function (card, selectedCharge) {
-    var r = this.state.reactor;
-    if (r.status === 'EMPTY') return { valid: true };
-
-    if (r.pendingH) {
-      if (card.category === 'HYDROGEN') {
-        return r.pendingH.count >= 2 ? { valid: false, reason: t('Pon antes un metal o un no metal.') } : { valid: true };
-      }
-      // Con un metal de número +n hacen falta n hidrógenos; con un no metal de −n, también n.
-      var maxH = Math.abs(selectedCharge);
-      return r.pendingH.count > maxH ? { valid: false, reason: t('Hay demasiados hidrógenos para este número de oxidación.') } : { valid: true };
-    }
-
-    var eff = card.category === 'HYDROGEN' ? this.resolveHydrogen(r) : selectedCharge;
-    var isCation = eff > 0;
-    var target = isCation ? r.cation : r.anion;
-    var opposite = isCation ? r.anion : r.cation;
-
-    if (target && target.symbol !== card.symbol) return { valid: false, reason: t('Solo compuestos binarios: dos elementos.') };
-    if (target && target.charge !== eff) return { valid: false, reason: t('Ese elemento ya está con otro número de oxidación.') };
-
-    if (opposite) {
-      var absCat = isCation ? eff : opposite.charge;
-      var absAni = Math.abs(isCation ? opposite.charge : eff);
-      var div = gcd(absCat, absAni);
-      var needed = isCation ? absAni / div : absCat / div;
-      if ((target ? target.count : 0) + 1 > needed) return { valid: false, reason: t('Sobra: la fórmula ya no se puede simplificar así.') };
-    } else if (target && target.count >= 2) {
-      return { valid: false, reason: t('Pon antes un elemento de signo contrario.') };
-    }
-    return { valid: true };
+  GameEngine.prototype.takeCard = function (playerIdx, cardId) {
+    var hand = this.state.players[playerIdx].hand;
+    var i = hand.findIndex(function (c) { return c.id === cardId; });
+    if (i === -1) return null;
+    var card = hand.splice(i, 1)[0];
+    card.blind = null;
+    return card;
   };
 
-  GameEngine.prototype.getIsotopeOptions = function () {
-    var r = this.state.reactor, opts = [];
-    if (r.pendingH && r.pendingH.count < 2) opts.push({ symbol: 'H', name: 'Hidrógeno', charge: 0, role: 'pending' });
-    if (r.cation) {
-      var dc = { type: 'ELEMENT', symbol: r.cation.symbol, category: r.cation.symbol === 'H' ? 'HYDROGEN' : 'METAL', valences: [r.cation.charge] };
-      if (this.canPlayElement(dc, r.cation.charge).valid) opts.push(Object.assign({}, r.cation, { role: 'cation' }));
-    }
-    if (r.anion) {
-      var da = { type: 'ELEMENT', symbol: r.anion.symbol, category: r.anion.symbol === 'H' ? 'HYDROGEN' : 'NON_METAL', valences: [r.anion.charge] };
-      if (this.canPlayElement(da, r.anion.charge).valid) opts.push(Object.assign({}, r.anion, { role: 'anion' }));
-    }
-    return opts;
-  };
+  GameEngine.prototype.playCard = function (playerIdx, cardId, isoSymbol) {
+    var st = this.state;
+    if (!st || st.status !== 'PLAYING' || st.turn !== playerIdx) return false;
+    var card = st.players[playerIdx].hand.find(function (c) { return c.id === cardId; });
+    if (!card || !this.canPlayCard(card).valid) return false;
+    var player = st.players[playerIdx], r = st.reactor;
+    this.takeCard(playerIdx, cardId);
 
-  GameEngine.prototype.playCard = function (playerIdx, cardId, chosenCharge, isotopeSymbol) {
-    if (!this.state || this.state.status !== 'PLAYING' || this.state.turn !== playerIdx) return false;
-    var player = this.state.players[playerIdx];
-    var cardIndex = player.hand.findIndex(function (c) { return c.id === cardId; });
-    if (cardIndex === -1) return false;
-    var card = player.hand[cardIndex];
-    if (chosenCharge === undefined) chosenCharge = null;
-
-    // Si no se indica número de oxidación, se usa el primero válido (no siempre el primero de la carta).
-    if (card.type === 'ELEMENT' && chosenCharge === null && card.category !== 'HYDROGEN') {
-      var self = this;
-      chosenCharge = card.valences.find(function (v) { return self.canPlayElement(card, v).valid; });
-      if (chosenCharge === undefined) return false;
-    }
-    if (!this.canPlayCard(card, chosenCharge).valid) return false;
-
-    player.hand.splice(cardIndex, 1);
-    card.blindModeType = null;
-    var r = this.state.reactor;
-
-    if (card.type === 'SPECIAL') {
-      if (card.specialType === 'ELECTROLYSIS') {
-        var removed = r.atomHistory[r.atomHistory.length - 1];
-        this.applyElectrolysis(card);
-        this.state.lastAction = t('{p} usó Electrólisis y quitó {s}.', { p: player.name, s: removed ? removed.symbol : t('un átomo') });
-        if (this.onEvent) this.onEvent({ type: 'ELECTROLYSIS_USED', playerName: player.name });
-        this.refillHand(playerIdx);
-        // Quitar un átomo no hace avanzar el compuesto: cuenta para la inestabilidad.
-        this.registerNoProgress();
-        this.advanceTurn();
-        return true;
-      }
-      if (card.specialType === 'CATALYST') {
-        var last = r.atomHistory[r.atomHistory.length - 1];
-        this.addAtomToReactor(last.symbol, last.name, last.charge, card, last.isHydrogen);
-        this.state.lastAction = t('{p} usó Catalizador y repitió {s}.', { p: player.name, s: last.symbol });
-      }
-      if (card.specialType === 'ISOTOPE') {
-        var opts = this.getIsotopeOptions();
-        var chosen = opts.find(function (o) { return o.symbol === isotopeSymbol; }) || opts[0];
-        this.addAtomToReactor(chosen.symbol, chosen.name, chosen.charge, card, chosen.symbol === 'H');
-        this.state.lastAction = t('{p} usó Isótopo comodín como {n} ({s}).', { p: player.name, n: chosen.name, s: chosen.symbol });
-      }
-    } else {
-      this.addAtomToReactor(card.symbol, card.name, chosenCharge !== null ? chosenCharge : card.valences[0], card, card.category === 'HYDROGEN');
-      var added = r.atomHistory[r.atomHistory.length - 1];
-      var sign = added.charge > 0 ? '+' + added.charge : (added.charge < 0 ? '−' + Math.abs(added.charge) : '±1');
-      this.state.lastAction = t('{p} jugó {n} ({s}, {c}).', { p: player.name, n: card.name, s: card.symbol, c: sign });
+    if (card.specialType === 'ELECTROLYSIS') {
+      var removedAtom = r.atoms.pop();
+      var removedCard = r.cards.pop();
+      st.discard.push(card);
+      if (removedCard) st.discard.push(removedCard);
+      if (!r.atoms.length) st.reactor = this.emptyReactor();
+      else r.view = analyze(r.atoms);
+      st.lastAction = t('{p} usó Electrólisis y quitó {s}.', { p: player.name, s: removedAtom ? removedAtom.symbol : '' });
+      this.refillHand(playerIdx);
+      this.emit('ELECTROLYSIS', { playerIdx: playerIdx, card: card, removed: removedCard, removedSymbol: removedAtom && removedAtom.symbol });
+      this.registerNoProgress();
+      this.advanceTurn();
+      return true;
     }
 
-    r.stagnationCounter = 0;
+    var atom = this.atomFor(card, isoSymbol);
+    r.status = 'ACTIVE';
+    r.atoms.push(atom);
+    r.cards.push(card);
+    r.stagnation = 0;
+    r.view = analyze(r.atoms);
+    st.lastAction = card.type === 'SPECIAL'
+      ? t('{p} usó {c} como {s}.', { p: player.name, c: card.name, s: atom.symbol })
+      : t('{p} jugó {n}.', { p: player.name, n: card.name });
+    this.emit('PLAY', { playerIdx: playerIdx, card: card, atomSymbol: atom.symbol });
     this.refillHand(playerIdx);
-    if (r.cation && r.anion && r.netCharge === 0) this.handleSynthesis(playerIdx, false);
+
+    if (r.view.closed) this.handleSynthesis(playerIdx, false);
     else this.advanceTurn();
     return true;
   };
 
-  GameEngine.prototype.addAtomToReactor = function (symbol, name, rawCharge, physicalCard, isHydrogen) {
-    var r = this.state.reactor;
-    r.status = 'ACTIVE';
-    r.cardsInPile.push(physicalCard);
-
-    // Hidrógeno con el reactor vacío: aún no se sabe si será +1 o −1.
-    if (isHydrogen && !r.cation && !r.anion) {
-      if (!r.pendingH) r.pendingH = { symbol: 'H', name: 'Hidrógeno', count: 1 };
-      else r.pendingH.count += 1;
-      r.atomHistory.push({ role: 'pending', symbol: 'H', name: 'Hidrógeno', charge: 0, isHydrogen: true });
-      r.netCharge = 0;
-      return;
-    }
-
-    if (r.pendingH) {
-      var hCharge = rawCharge > 0 ? -1 : 1;
-      var hSlot = { symbol: 'H', name: 'Hidrógeno', charge: hCharge, count: r.pendingH.count };
-      if (hCharge > 0) r.cation = hSlot; else r.anion = hSlot;
-      r.atomHistory.forEach(function (item) {
-        if (item.role === 'pending') { item.role = hCharge > 0 ? 'cation' : 'anion'; item.charge = hCharge; }
-      });
-      r.pendingH = null;
-    }
-
-    var eff = isHydrogen ? this.resolveHydrogen(r) : rawCharge;
-    if (eff > 0) {
-      if (!r.cation) r.cation = { symbol: symbol, name: name, charge: eff, count: 1 }; else r.cation.count += 1;
-      r.atomHistory.push({ role: 'cation', symbol: symbol, name: name, charge: eff, isHydrogen: isHydrogen });
-    } else {
-      if (!r.anion) r.anion = { symbol: symbol, name: name, charge: eff, count: 1 }; else r.anion.count += 1;
-      r.atomHistory.push({ role: 'anion', symbol: symbol, name: name, charge: eff, isHydrogen: isHydrogen });
-    }
-    this.recalculateNetCharge();
-  };
-
-  GameEngine.prototype.applyElectrolysis = function (card) {
-    var r = this.state.reactor;
-    this.state.discard.push(card);
-    var lastAtom = r.atomHistory.pop();
-    var removedCard = r.cardsInPile.pop();
-    if (removedCard) this.state.discard.push(removedCard);
-    if (lastAtom) {
-      if (lastAtom.role === 'pending' && r.pendingH) {
-        r.pendingH.count -= 1;
-        if (r.pendingH.count <= 0) r.pendingH = null;
-      } else if (lastAtom.role === 'cation' && r.cation) {
-        r.cation.count -= 1;
-        if (r.cation.count <= 0) r.cation = null;
-      } else if (lastAtom.role === 'anion' && r.anion) {
-        r.anion.count -= 1;
-        if (r.anion.count <= 0) r.anion = null;
-      }
-    }
-    // Si solo queda hidrógeno, vuelve a estar «sin decidir» (+1 o −1).
-    var onlyH = (r.cation && r.cation.symbol === 'H' && !r.anion) || (r.anion && r.anion.symbol === 'H' && !r.cation);
-    if (onlyH) {
-      var h = r.cation || r.anion;
-      r.pendingH = { symbol: 'H', name: 'Hidrógeno', count: h.count };
-      r.cation = null; r.anion = null;
-      r.atomHistory.forEach(function (item) { item.role = 'pending'; item.charge = 0; });
-    }
-    if (!r.cation && !r.anion && !r.pendingH) {
-      var counter = r.stagnationCounter;
-      this.state.reactor = this.createEmptyReactor();
-      this.state.reactor.stagnationCounter = 0;
-      return counter;
-    }
-    this.recalculateNetCharge();
-  };
-
-  GameEngine.prototype.recalculateNetCharge = function () {
-    var r = this.state.reactor;
-    r.netCharge = (r.cation ? r.cation.charge * r.cation.count : 0) + (r.anion ? r.anion.charge * r.anion.count : 0);
-  };
-
-  // Un turno que no añade átomos: a los 3 seguidos, el compuesto a medias se descompone.
   GameEngine.prototype.registerNoProgress = function () {
     var r = this.state.reactor;
     if (r.status !== 'ACTIVE') return;
-    r.stagnationCounter += 1;
-    if (r.stagnationCounter >= STAGNATION_LIMIT) {
-      this.state.discard.push.apply(this.state.discard, r.cardsInPile);
-      this.state.reactor = this.createEmptyReactor();
+    r.stagnation += 1;
+    if (r.stagnation >= STAGNATION_LIMIT) {
+      var lost = r.cards.slice();
+      this.state.discard.push.apply(this.state.discard, lost);
+      this.state.reactor = this.emptyReactor();
       this.state.lastAction = t('El compuesto a medias se descompuso tras 3 turnos sin avanzar.');
-      if (this.onEvent) this.onEvent({ type: 'DECOMPOSED' });
+      this.emit('DECOMPOSED', { cards: lost });
     }
   };
 
-  GameEngine.prototype.canPlayCombo = function (playerIdx, cardIds) {
-    if (this.state.reactor.status !== 'EMPTY') return { valid: false };
-    if (cardIds.length < 2 || cardIds.length > 5) return { valid: false };
+  GameEngine.prototype.comboCheck = function (playerIdx, cardIds) {
+    if (this.state.reactor.status !== 'EMPTY' || cardIds.length < 2 || cardIds.length > 5) return { valid: false };
     var hand = this.state.players[playerIdx].hand;
-    var cards = cardIds.map(function (id) { return hand.find(function (c) { return c.id === id; }); }).filter(Boolean);
-    if (cards.length !== cardIds.length || cards.some(function (c) { return c.type !== 'ELEMENT'; })) return { valid: false };
-    var symbols = {};
-    cards.forEach(function (c) { symbols[c.symbol] = true; });
-    if (Object.keys(symbols).length !== 2) return { valid: false };
-
-    var combos = this.cartesianProduct(cards.map(function (c) { return c.valences; }));
-    for (var k = 0; k < combos.length; k++) {
-      var combo = combos[k];
-      if (combo.reduce(function (a, v) { return a + v; }, 0) !== 0) continue;
-      var posIdx = combo.findIndex(function (v) { return v > 0; });
-      var negIdx = combo.findIndex(function (v) { return v < 0; });
-      if (posIdx === -1 || negIdx === -1) continue;
-      var catSym = cards[posIdx].symbol, aniSym = cards[negIdx].symbol;
-      if (catSym === aniSym) continue;
-      var catCharge = combo[posIdx], aniCharge = combo[negIdx];
-      var ok = true, catCount = 0, aniCount = 0;
-      for (var i = 0; i < cards.length; i++) {
-        if (cards[i].symbol === catSym) { if (combo[i] !== catCharge) ok = false; catCount++; }
-        else { if (combo[i] !== aniCharge) ok = false; aniCount++; }
-      }
-      var div = gcd(catCharge, Math.abs(aniCharge));
-      if (ok && catCount === Math.abs(aniCharge) / div && aniCount === catCharge / div) return { valid: true, comboCharges: combo };
-    }
-    return { valid: false };
+    var cards = cardIds.map(function (id) { return hand.find(function (c) { return c.id === id; }); });
+    if (cards.some(function (c) { return !c || c.type !== 'ELEMENT'; })) return { valid: false };
+    var a = analyze(cards.map(function (c) { return { symbol: c.symbol, numbers: c.numbers }; }));
+    return { valid: a.closed };
   };
 
   GameEngine.prototype.playCombo = function (playerIdx, cardIds) {
-    if (!this.state || this.state.status !== 'PLAYING' || this.state.turn !== playerIdx) return false;
-    var check = this.canPlayCombo(playerIdx, cardIds);
-    if (!check.valid) return false;
-    var player = this.state.players[playerIdx], self = this;
-    cardIds.forEach(function (id, idx) {
-      var cIdx = player.hand.findIndex(function (c) { return c.id === id; });
-      var card = player.hand.splice(cIdx, 1)[0];
-      card.blindModeType = null;
-      self.addAtomToReactor(card.symbol, card.name, check.comboCharges[idx], card, card.category === 'HYDROGEN');
+    var st = this.state;
+    if (!st || st.status !== 'PLAYING' || st.turn !== playerIdx || !this.comboCheck(playerIdx, cardIds).valid) return false;
+    var self = this, r = st.reactor, played = [];
+    cardIds.forEach(function (id) {
+      var card = self.takeCard(playerIdx, id);
+      played.push(card);
+      r.atoms.push({ symbol: card.symbol, numbers: card.numbers.slice(), cardId: card.id });
+      r.cards.push(card);
     });
-    this.state.lastAction = t('¡Combo directo de {n} cartas de {p}!', { n: cardIds.length, p: player.name });
+    r.status = 'ACTIVE';
+    r.view = analyze(r.atoms);
+    st.lastAction = t('¡Combo directo de {p} con {n} cartas!', { p: st.players[playerIdx].name, n: played.length });
+    this.emit('COMBO', { playerIdx: playerIdx, cards: played });
     this.refillHand(playerIdx);
     this.handleSynthesis(playerIdx, true);
     return true;
   };
 
   GameEngine.prototype.recycleCards = function (playerIdx, cardIds) {
-    if (!this.state || this.state.status !== 'PLAYING' || this.state.turn !== playerIdx) return false;
-    if (cardIds.length < 1 || cardIds.length > 3) return false;
-    var player = this.state.players[playerIdx], self = this;
-    cardIds.forEach(function (id) {
-      var idx = player.hand.findIndex(function (c) { return c.id === id; });
-      if (idx !== -1) self.state.discard.push(player.hand.splice(idx, 1)[0]);
-    });
+    var st = this.state;
+    if (!st || st.status !== 'PLAYING' || st.turn !== playerIdx || cardIds.length < 1 || cardIds.length > 3) return false;
+    var self = this, gone = [];
+    cardIds.forEach(function (id) { var c = self.takeCard(playerIdx, id); if (c) { gone.push(c); st.discard.push(c); } });
     this.refillHand(playerIdx);
-    this.state.lastAction = cardIds.length > 1
-      ? t('{p} cambió {n} cartas.', { p: player.name, n: cardIds.length })
-      : t('{p} cambió 1 carta.', { p: player.name });
+    st.lastAction = gone.length > 1 ? t('{p} cambió {n} cartas.', { p: st.players[playerIdx].name, n: gone.length })
+                                    : t('{p} cambió 1 carta.', { p: st.players[playerIdx].name });
+    this.emit('RECYCLE', { playerIdx: playerIdx, cards: gone });
     this.registerNoProgress();
     this.advanceTurn();
     return true;
   };
 
   GameEngine.prototype.handleSynthesis = function (playerIdx, isCombo) {
-    var r = this.state.reactor;
-    var points = r.cardsInPile.length;
-    var player = this.state.players[playerIdx];
+    var st = this.state, r = st.reactor;
+    var points = r.cards.length;
+    var player = st.players[playerIdx];
+    var as = r.view.assignment;
+    var info = CC.buildCompoundInfo(as.cation, as.anion);
+    var totalAtoms = as.cation.count + as.anion.count;
+    var cards = r.cards.slice();
+
     player.score += points;
-    var totalAtoms = r.cation.count + r.anion.count;
-    var info = CC.buildCompoundInfo(r.cation, r.anion);
+    st.discard.push.apply(st.discard, cards);
+    st.synthesizedHistory.push({ key: info.key, formulaHTML: info.formulaHTML, name: info.systematic,
+                                 playerIdx: playerIdx, playerName: player.name, points: points });
+    st.lastAction = t('{p} formó {f} y gana {k} puntos.', { p: player.name, f: info.key, k: points });
+    st.reactor = this.emptyReactor();
 
-    this.state.lastAction = t('{p} formó {f} ({n}) y gana {k} puntos.', { p: player.name, f: info.key, n: info.systematic, k: points });
-    this.state.discard.push.apply(this.state.discard, r.cardsInPile);
-    this.state.synthesizedHistory.push({ key: info.key, formulaHTML: info.formulaHTML, name: info.systematic,
-                                         playerIdx: playerIdx, playerName: player.name, points: points });
-    if (this.onEvent) this.onEvent({ type: 'COMPOUND_SYNTHESIZED', key: info.key, formulaHTML: info.formulaHTML,
-                                     name: info.systematic, points: points, playerIdx: playerIdx });
+    var quiz = totalAtoms >= 3 || isCombo;
+    this.emit('SYNTHESIS', { playerIdx: playerIdx, key: info.key, formulaHTML: info.formulaHTML, name: info.systematic,
+                             points: points, cards: cards, cation: as.cation, anion: as.anion, quizNext: quiz });
 
-    if (totalAtoms >= 3 || isCombo) {
-      var question = CC.generateFlashQuestion(r.cation, r.anion, this.config.level);
-      this.state.status = 'QUIZ';
-      this.state.quiz = { id: ++this.quizSeq, question: question, ownerIdx: playerIdx, answeringIdx: playerIdx, phase: 'FLASH' };
-      this.state.reactor = this.createEmptyReactor();
-      this.emitState();
+    if (quiz) {
+      st.status = 'QUIZ';
+      st.quiz = { id: ++this.quizSeq, question: CC.generateFlashQuestion(as.cation, as.anion, this.config.level),
+                  ownerIdx: playerIdx, answeringIdx: playerIdx, phase: 'FLASH' };
+      this.emit('QUIZ');
       this.maybeBotAnswer();
     } else {
-      this.state.reactor = this.createEmptyReactor();
-      if (this.onEvent) this.onEvent({ type: 'SIMPLE_BANNER', formulaHTML: info.formulaHTML, name: info.systematic, points: points });
       this.advanceTurn();
     }
   };
 
-  // El ordenador contesta los retos que le tocan: acierta más cuanto más nivel tiene.
   GameEngine.prototype.maybeBotAnswer = function () {
     var q = this.state.quiz;
     if (this.config.mode !== 'BOT' || !q || q.answeringIdx !== 1) return;
     var self = this, id = q.id, phase = q.phase;
-    var hitRate = { APPRENTICE: 0.45, CHEMIST: 0.65, NOBEL: 0.85 }[this.config.botLevel] || 0.65;
-    setTimeout(function () {
-      if (self.destroyed || !self.state.quiz || self.state.quiz.id !== id || self.state.quiz.phase !== phase) return;
+    var hit = { APPRENTICE: 0.45, CHEMIST: 0.65, NOBEL: 0.85 }[this.config.botLevel] || 0.65;
+    this.later(1800, function () {
+      if (!self.state.quiz || self.state.quiz.id !== id || self.state.quiz.phase !== phase) return;
       var opts = self.state.quiz.question.options;
-      var correct = opts.findIndex(function (o) { return o.correct; });
-      self.resolveQuizAnswer(Math.random() < hitRate ? correct : (correct + 1) % opts.length);
-    }, 1600);
+      var ok = opts.findIndex(function (o) { return o.correct; });
+      self.resolveQuizAnswer(Math.random() < hit ? ok : (ok + 1) % opts.length);
+    });
   };
 
   GameEngine.prototype.resolveQuizAnswer = function (optionIndex) {
-    if (!this.state || this.state.status !== 'QUIZ' || !this.state.quiz) return;
-    var q = this.state.quiz;
+    var st = this.state;
+    if (!st || st.status !== 'QUIZ' || !st.quiz) return;
+    var q = st.quiz;
     var chosen = optionIndex !== null && optionIndex !== undefined ? q.question.options[optionIndex] : null;
-
     if (chosen && chosen.correct) {
-      var winner = this.state.players[q.answeringIdx];
-      winner.score += 3;
-      this.state.lastAction = t('{p} acertó el reto y gana 3 puntos.', { p: winner.name });
-      if (this.onEvent) this.onEvent({ type: 'QUIZ_SUCCESS', winnerName: winner.name, isRebound: q.phase === 'REBOUND' });
-      this.state.quiz = null;
-      this.state.status = 'PLAYING';
+      var w = st.players[q.answeringIdx];
+      w.score += 3;
+      st.lastAction = t('{p} acertó el reto y gana 3 puntos.', { p: w.name });
+      st.quiz = null; st.status = 'PLAYING';
+      this.emit('QUIZ_RESULT', { ok: true, chosen: optionIndex, winnerIdx: q.answeringIdx, rebound: q.phase === 'REBOUND', question: q.question });
       this.advanceTurn();
       return;
     }
-
     if (q.phase === 'FLASH') {
+      var failedIdx = q.answeringIdx;
       q.phase = 'REBOUND';
       q.answeringIdx = 1 - q.ownerIdx;
-      this.emitState();
+      this.emit('QUIZ_RESULT', { ok: false, chosen: optionIndex, loserIdx: failedIdx, rebound: false, toRebound: true, question: q.question });
+      this.emit('QUIZ');
       this.maybeBotAnswer();
     } else {
-      this.state.lastAction = t('Respuesta correcta: {r}.', { r: q.question.correctText.replace(/<\/?sub>/g, '') });
-      if (this.onEvent) this.onEvent({ type: 'QUIZ_FAILED', correctName: q.question.correctText });
-      this.state.quiz = null;
-      this.state.status = 'PLAYING';
+      st.lastAction = t('Nadie acertó. Era: {r}.', { r: q.question.correctText.replace(/<\/?sub>/g, '') });
+      st.quiz = null; st.status = 'PLAYING';
+      this.emit('QUIZ_RESULT', { ok: false, chosen: optionIndex, loserIdx: q.answeringIdx, rebound: true, question: q.question });
       this.advanceTurn();
     }
   };
@@ -456,103 +391,57 @@ window.CC = window.CC || {};
   };
 
   GameEngine.prototype.advanceTurn = function () {
-    if (this.state.deck.length === 0 && this.state.players.some(function (p) { return p.hand.length === 0; })) {
-      this.state.status = 'GAMEOVER';
-      this.emitState();
+    var st = this.state;
+    if (st.deck.length === 0 && st.players.some(function (p) { return p.hand.length === 0; })) {
+      st.status = 'GAMEOVER';
+      this.emit('GAMEOVER');
       return;
     }
-    this.state.turn = 1 - this.state.turn;
-    this.emitState();
-    if (this.config.mode === 'BOT' && this.state.turn === 1 && this.state.status === 'PLAYING') {
+    st.turn = 1 - st.turn;
+    this.emit('TURN', { turn: st.turn });
+    if (this.config.mode === 'BOT' && st.turn === 1 && st.status === 'PLAYING') {
       var self = this;
-      setTimeout(function () { if (!self.destroyed) self.executeBotTurn(); }, 1100);
+      this.later(1300, function () { self.executeBotTurn(); });
     }
   };
 
-  // ¿Cerraría el compuesto esta jugada? Se prueba sobre una copia del reactor.
-  GameEngine.prototype.wouldClose = function (card, charge) {
-    var saved = this.state.reactor;
-    this.state.reactor = JSON.parse(JSON.stringify(saved));
-    var r = this.state.reactor, closes = false;
-    if (card.type === 'ELEMENT') {
-      this.addAtomToReactor(card.symbol, card.name, charge, card, card.category === 'HYDROGEN');
-      closes = !!(r.cation && r.anion && r.netCharge === 0);
-    } else if (card.specialType === 'CATALYST') {
-      var last = r.atomHistory[r.atomHistory.length - 1];
-      this.addAtomToReactor(last.symbol, last.name, last.charge, card, last.isHydrogen);
-      closes = !!(r.cation && r.anion && r.netCharge === 0);
-    } else if (card.specialType === 'ISOTOPE') {
-      var opt = this.getIsotopeOptions()[0];
-      if (opt) {
-        this.addAtomToReactor(opt.symbol, opt.name, opt.charge, card, opt.symbol === 'H');
-        closes = !!(r.cation && r.anion && r.netCharge === 0);
-      }
-    }
-    this.state.reactor = saved;
-    return closes;
+  // ¿Cerraría el compuesto esta carta?
+  GameEngine.prototype.wouldClose = function (card) {
+    var atom = this.atomFor(card);
+    return !!atom && analyze(this.state.reactor.atoms.concat([atom])).closed;
   };
 
   GameEngine.prototype.executeBotTurn = function () {
-    if (this.state.status !== 'PLAYING' || this.state.turn !== 1) return;
-    var hand = this.state.players[1].hand;
-    var r = this.state.reactor, self = this;
+    var st = this.state;
+    if (st.status !== 'PLAYING' || st.turn !== 1) return;
+    var hand = st.players[1].hand, r = st.reactor, self = this;
 
-    // El Premio Nobel busca un combo directo (de 2 a 5 cartas) si el reactor está vacío.
     if (this.config.botLevel === 'NOBEL' && r.status === 'EMPTY' && hand.length >= 2) {
       var best = null;
       for (var mask = 1; mask < (1 << hand.length); mask++) {
         var ids = [];
         for (var b = 0; b < hand.length; b++) if (mask & (1 << b)) ids.push(hand[b].id);
-        if (ids.length < 2) continue;
-        if ((!best || ids.length > best.length) && this.canPlayCombo(1, ids).valid) best = ids;
+        if (ids.length >= 2 && (!best || ids.length > best.length) && this.comboCheck(1, ids).valid) best = ids;
       }
       if (best) { this.playCombo(1, best); return; }
     }
 
-    var moves = [];
-    hand.forEach(function (card) {
-      if (card.type === 'ELEMENT') {
-        card.valences.forEach(function (ch) {
-          if (self.canPlayElement(card, ch).valid) moves.push({ card: card, charge: ch });
-        });
-      } else {
-        var check = self.canPlayCard(card);
-        if (check.valid) moves.push({ card: card, charge: null, iso: check.isotopeOptions && check.isotopeOptions[0] && check.isotopeOptions[0].symbol });
-      }
-    });
-
-    if (moves.length === 0) {
+    var moves = hand.filter(function (c) { return self.canPlayCard(c).valid; });
+    if (!moves.length) {
       this.recycleCards(1, hand.slice(0, Math.min(3, hand.length)).map(function (c) { return c.id; }));
       return;
     }
-
     CC.shuffle(moves);
-    var selected = moves[0];
-    if (this.config.botLevel !== 'APPRENTICE' && r.status === 'ACTIVE') {
-      var closing = moves.find(function (m) { return m.card.specialType !== 'ELECTROLYSIS' && self.wouldClose(m.card, m.charge); });
-      if (closing) selected = closing;
-      else if (this.config.botLevel === 'NOBEL' && r.cardsInPile.length >= 3) {
-        var electro = moves.find(function (m) { return m.card.specialType === 'ELECTROLYSIS'; });
-        if (electro) selected = electro;
-      }
-    } else if (this.config.botLevel !== 'APPRENTICE') {
-      // Con el reactor vacío no empieza con cartas especiales si puede evitarlo.
-      var element = moves.find(function (m) { return m.card.type === 'ELEMENT'; });
-      if (element) selected = element;
+    var pick = moves[0];
+    if (this.config.botLevel !== 'APPRENTICE') {
+      var closing = moves.find(function (c) { return c.specialType !== 'ELECTROLYSIS' && self.wouldClose(c); });
+      var element = moves.find(function (c) { return c.type === 'ELEMENT'; });
+      if (closing) pick = closing;
+      else if (this.config.botLevel === 'NOBEL' && r.cards.length >= 3 && moves.some(function (c) { return c.specialType === 'ELECTROLYSIS'; })) {
+        pick = moves.find(function (c) { return c.specialType === 'ELECTROLYSIS'; });
+      } else if (element) pick = element;
     }
-    this.playCard(1, selected.card.id, selected.charge, selected.iso);
-  };
-
-  GameEngine.prototype.cartesianProduct = function (arrays) {
-    return arrays.reduce(function (acc, curr) {
-      var res = [];
-      acc.forEach(function (a) { curr.forEach(function (b) { res.push(a.concat([b])); }); });
-      return res;
-    }, [[]]);
-  };
-
-  GameEngine.prototype.emitState = function () {
-    if (this.onStateChange && !this.destroyed) this.onStateChange(this.state);
+    this.playCard(1, pick.id);
   };
 
   CC.GameEngine = GameEngine;
