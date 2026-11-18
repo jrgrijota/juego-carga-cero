@@ -3,22 +3,21 @@
 // directamente desde el disco: los módulos de JavaScript no cargan con file://.
 window.CC = window.CC || {};
 
-// category: METAL (siempre número de oxidación positivo), NON_METAL (negativo en
-// estos compuestos) o HYDROGEN (+1 con no metales y −1 con metales).
-// numbersBasic: en el nivel básico cada carta de Fe y Cu trae uno solo, ya fijado.
-// numbersAdvanced: en el nivel avanzado se elige al jugar la carta.
+// category: METAL (catión), NON_METAL (anión) o HYDROGEN (+1 con no metales y −1 con metales).
+// numbers: todos sus números de oxidación en estos compuestos. Las cartas los muestran todos
+// y el reactor elige solo el que hace que la carga neta llegue a cero.
 CC.ELEMENTS = {
-  H:  { symbol: 'H',  name: 'Hidrógeno', cationName: 'hidrógeno', anionRoot: 'hidruro', category: 'HYDROGEN',  count: 6, numbersBasic: [1, -1],       numbersAdvanced: [1, -1] },
-  Na: { symbol: 'Na', name: 'Sodio',     cationName: 'sodio',     anionRoot: '',        category: 'METAL',     count: 4, numbersBasic: [1],           numbersAdvanced: [1] },
-  K:  { symbol: 'K',  name: 'Potasio',   cationName: 'potasio',   anionRoot: '',        category: 'METAL',     count: 4, numbersBasic: [1],           numbersAdvanced: [1] },
-  Ca: { symbol: 'Ca', name: 'Calcio',    cationName: 'calcio',    anionRoot: '',        category: 'METAL',     count: 4, numbersBasic: [2],           numbersAdvanced: [2] },
-  Mg: { symbol: 'Mg', name: 'Magnesio',  cationName: 'magnesio',  anionRoot: '',        category: 'METAL',     count: 4, numbersBasic: [2],           numbersAdvanced: [2] },
-  Al: { symbol: 'Al', name: 'Aluminio',  cationName: 'aluminio',  anionRoot: '',        category: 'METAL',     count: 4, numbersBasic: [3],           numbersAdvanced: [3] },
-  Fe: { symbol: 'Fe', name: 'Hierro',    cationName: 'hierro',    anionRoot: '',        category: 'METAL',     count: 4, numbersBasic: [2, 2, 3, 3], numbersAdvanced: [2, 3] },
-  Cu: { symbol: 'Cu', name: 'Cobre',     cationName: 'cobre',     anionRoot: '',        category: 'METAL',     count: 4, numbersBasic: [1, 1, 2, 2], numbersAdvanced: [1, 2] },
-  Cl: { symbol: 'Cl', name: 'Cloro',     cationName: 'cloro',     anionRoot: 'cloruro', category: 'NON_METAL', count: 6, numbersBasic: [-1],          numbersAdvanced: [-1] },
-  S:  { symbol: 'S',  name: 'Azufre',    cationName: 'azufre',    anionRoot: 'sulfuro', category: 'NON_METAL', count: 5, numbersBasic: [-2],          numbersAdvanced: [-2] },
-  O:  { symbol: 'O',  name: 'Oxígeno',   cationName: 'oxígeno',   anionRoot: 'óxido',   category: 'NON_METAL', count: 6, numbersBasic: [-2],          numbersAdvanced: [-2] }
+  H:  { symbol: 'H',  name: 'Hidrógeno', cationName: 'hidrógeno', anionRoot: 'hidruro', category: 'HYDROGEN',  count: 6, numbers: [1, -1] },
+  Na: { symbol: 'Na', name: 'Sodio',     cationName: 'sodio',     anionRoot: '',        category: 'METAL',     count: 4, numbers: [1] },
+  K:  { symbol: 'K',  name: 'Potasio',   cationName: 'potasio',   anionRoot: '',        category: 'METAL',     count: 4, numbers: [1] },
+  Ca: { symbol: 'Ca', name: 'Calcio',    cationName: 'calcio',    anionRoot: '',        category: 'METAL',     count: 4, numbers: [2] },
+  Mg: { symbol: 'Mg', name: 'Magnesio',  cationName: 'magnesio',  anionRoot: '',        category: 'METAL',     count: 4, numbers: [2] },
+  Al: { symbol: 'Al', name: 'Aluminio',  cationName: 'aluminio',  anionRoot: '',        category: 'METAL',     count: 4, numbers: [3] },
+  Fe: { symbol: 'Fe', name: 'Hierro',    cationName: 'hierro',    anionRoot: '',        category: 'METAL',     count: 4, numbers: [2, 3] },
+  Cu: { symbol: 'Cu', name: 'Cobre',     cationName: 'cobre',     anionRoot: '',        category: 'METAL',     count: 4, numbers: [1, 2] },
+  Cl: { symbol: 'Cl', name: 'Cloro',     cationName: 'cloro',     anionRoot: 'cloruro', category: 'NON_METAL', count: 6, numbers: [-1] },
+  S:  { symbol: 'S',  name: 'Azufre',    cationName: 'azufre',    anionRoot: 'sulfuro', category: 'NON_METAL', count: 5, numbers: [-2] },
+  O:  { symbol: 'O',  name: 'Oxígeno',   cationName: 'oxígeno',   anionRoot: 'óxido',   category: 'NON_METAL', count: 6, numbers: [-2] }
 };
 
 CC.SPECIAL_CARDS = [

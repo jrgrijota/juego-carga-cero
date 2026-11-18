@@ -4,358 +4,285 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Carga cero — Juego de formulación</title>
-    <meta name="description" content="Juego de cartas para practicar la formulación de compuestos binarios: combina elementos hasta que la carga neta sea cero y nombra el compuesto.">
+    <meta name="description" content="Juego de cartas para practicar la formulación de compuestos binarios: junta cationes y aniones hasta que la carga neta sea cero y nombra el compuesto.">
     <script src="js/i18n.js"></script>
     <link rel="stylesheet" href="css/style.css">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <script src="js/estadisticas.js" data-sim="juego-carga-cero"></script>
-    <script src="js/sello.js" data-contenedor="main.simulation-panel" data-esquina="bl"></script>
+    <script src="js/sello.js" data-contenedor="main.stage" data-esquina="bl"></script>
 </head>
 <body class="pantalla-menu">
-    <div class="app-container">
+<div class="app">
 
-        <!-- ── PANEL DE CONTROL ──────────────────────────────────── -->
-        <aside class="control-panel">
+    <header class="topbar">
+        <div class="logo">
+            <span class="logo-badge" aria-hidden="true">0</span>
+            <span class="logo-text">Carga cero</span>
+        </div>
+        <nav class="topbar-actions">
+            <button id="btn-rules" type="button" class="pill-btn"><span aria-hidden="true">❓</span> <span class="pill-label">Cómo se juega</span></button>
+            <button id="btn-open-codex" type="button" class="pill-btn"><span aria-hidden="true">📒</span> <span class="pill-label">Cuaderno</span> <span class="pill-count"><span id="codex-counter">0</span>/<span id="codex-total">39</span></span></button>
+            <button id="btn-toggle-sound" type="button" class="pill-btn icon-only" aria-pressed="true" aria-label="Sonido" title="Sonido"><span id="sound-icon" aria-hidden="true">🔊</span></button>
+            <button id="theme-btn" type="button" class="pill-btn icon-only" aria-label="Cambiar tema" title="Cambiar tema" aria-expanded="false"><span aria-hidden="true">🎨</span></button>
+            <button id="btn-exit-match" type="button" class="pill-btn solo-juego"><span aria-hidden="true">✕</span> <span class="pill-label">Salir</span></button>
+        </nav>
+        <div id="theme-panel" class="theme-panel" aria-hidden="true">
+            <p class="theme-panel-title">Tema</p>
+            <button type="button" class="theme-opt active" data-theme="noche"><span class="theme-swatch sw-noche"></span>Noche</button>
+            <button type="button" class="theme-opt" data-theme="dia"><span class="theme-swatch sw-dia"></span>Día</button>
+            <button type="button" class="theme-opt" data-theme="contrast"><span class="theme-swatch sw-contrast"></span>Alto contraste</button>
+        </div>
+    </header>
 
-            <header>
-                <div class="header-top">
-                    <svg class="header-icon-svg" width="42" height="42" viewBox="0 0 42 42" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                        <circle cx="21" cy="21" r="17" fill="none" stroke="#00c8ff" stroke-width="2" stroke-dasharray="5 3.5"/>
-                        <circle cx="21" cy="21" r="11" fill="#55cc80"/>
-                        <text x="21" y="26" text-anchor="middle" font-family="monospace" font-weight="700" font-size="14" fill="#0f0f0f">0</text>
-                        <circle cx="21" cy="4" r="3" fill="#ff9a4a"/>
-                        <circle cx="21" cy="38" r="3" fill="#6ab8ff"/>
-                    </svg>
-                    <h1>Carga cero</h1>
-                </div>
-                <p class="subtitle">Juego de formulación · compuestos binarios</p>
-                <details class="header-details">
-                    <summary>¿De qué va el juego?</summary>
-                    <div class="header-details-body">
-                        <p class="section-note">
-                            Cada carta es un elemento con su <strong>número de oxidación</strong>. Juégalas en el reactor
-                            hasta que <strong>la carga neta sea cero</strong>: entonces has formado un compuesto y te llevas las cartas.
-                        </p>
-                        <div class="quick-rule">
-                            <span class="qr-pos">Ca (+2) + Cl (−1) + Cl (−1) = 0 → CaCl₂</span>
-                            <span class="qr-neg">Al (+3) × 2 + O (−2) × 3 = 0 → Al₂O₃</span>
-                        </div>
-                    </div>
-                </details>
-            </header>
+    <main class="stage">
+        <div class="bg-deco" aria-hidden="true"></div>
 
-            <hr class="divider">
-
-            <!-- ═══ CONFIGURACIÓN (antes de la partida) ═══ -->
-            <section class="control-group solo-menu">
-                <h2 id="h-nivel">Nivel</h2>
-                <div class="mode-switch" id="select-level" role="radiogroup" aria-labelledby="h-nivel">
-                    <button type="button" class="mode-btn active" data-val="BASIC" role="radio" aria-checked="true">
-                        Básico
-                        <span class="mode-sub">un número por carta</span>
-                    </button>
-                    <button type="button" class="mode-btn" data-val="ADVANCED" role="radio" aria-checked="false">
-                        Avanzado
-                        <span class="mode-sub">Fe y Cu: tú eliges</span>
-                    </button>
-                </div>
-            </section>
-
-            <section class="control-group solo-menu">
-                <h2 id="h-rival">Contra quién juegas</h2>
-                <div class="mode-switch mode-switch-3" id="select-mode" role="radiogroup" aria-labelledby="h-rival">
-                    <button type="button" class="mode-btn active" data-val="BOT" role="radio" aria-checked="true">
-                        Ordenador
-                        <span class="mode-sub">un jugador</span>
-                    </button>
-                    <button type="button" class="mode-btn" data-val="LOCAL" role="radio" aria-checked="false">
-                        Por turnos
-                        <span class="mode-sub">un dispositivo</span>
-                    </button>
-                    <button type="button" class="mode-btn" data-val="P2P" role="radio" aria-checked="false">
-                        En línea
-                        <span class="mode-sub">con código</span>
-                    </button>
-                </div>
-
-                <div class="input-wrapper solo-bot">
-                    <span class="label-like" id="lbl-bot">Nivel del ordenador</span>
-                    <div class="seg-control" id="select-bot-level" role="radiogroup" aria-labelledby="lbl-bot">
-                        <button type="button" class="seg-btn" data-val="APPRENTICE" role="radio" aria-checked="false">Aprendiz</button>
-                        <button type="button" class="seg-btn active" data-val="CHEMIST" role="radio" aria-checked="true">Químico</button>
-                        <button type="button" class="seg-btn" data-val="NOBEL" role="radio" aria-checked="false">Nobel</button>
-                    </div>
-                </div>
-
-                <div id="p2p-panel" class="p2p-box solo-p2p">
-                    <button id="btn-create-room" type="button" class="action-btn">Crear sala</button>
-                    <div class="p2p-join">
-                        <label for="input-room-code">Código de una sala</label>
-                        <div class="p2p-row">
-                            <input type="text" id="input-room-code" maxlength="4" autocomplete="off" spellcheck="false" placeholder="ABCD">
-                            <button id="btn-join-room" type="button" class="action-btn">Unirse</button>
-                        </div>
-                    </div>
-                    <p id="p2p-code" class="p2p-code" hidden></p>
-                    <p id="p2p-status" class="field-hint" role="status">Un dispositivo crea la sala y el otro escribe su código. Hace falta conexión a internet.</p>
-                </div>
-            </section>
-
-            <section class="control-group solo-menu">
-                <h2>Opciones</h2>
-                <div class="input-wrapper">
-                    <span class="label-like" id="lbl-tiempo">Tiempo para nombrar el compuesto</span>
-                    <div class="seg-control" id="select-time" role="radiogroup" aria-labelledby="lbl-tiempo">
-                        <button type="button" class="seg-btn active" data-val="6" role="radio" aria-checked="true">6 s</button>
-                        <button type="button" class="seg-btn" data-val="12" role="radio" aria-checked="false">12 s</button>
-                        <button type="button" class="seg-btn" data-val="0" role="radio" aria-checked="false">Sin límite</button>
-                    </div>
-                </div>
-                <label class="check-row">
-                    <input type="checkbox" id="check-blind">
-                    Ocultar el símbolo o el nombre de algunas cartas
-                </label>
-                <p class="field-hint">Para practicar: tendrás que deducir el símbolo a partir del nombre, o al revés.</p>
-            </section>
-
-            <button id="btn-start-game" type="button" class="primary-btn solo-menu">▶ Empezar partida</button>
-
-            <!-- ═══ DURANTE LA PARTIDA ═══ -->
-            <section class="control-group solo-juego">
-                <h2>Marcador</h2>
-                <div class="metrics-grid metrics-grid-2">
-                    <div class="card card-data player-card" id="p0-box">
-                        <h3 id="p0-name">Jugador 1</h3>
-                        <div class="metric"><span id="p0-score">0</span> <small>puntos</small></div>
-                        <span class="turn-pill" id="p0-turn">Le toca</span>
-                    </div>
-                    <div class="card card-data player-card" id="p1-box">
-                        <h3 id="p1-name">Jugador 2</h3>
-                        <div class="metric"><span id="p1-score">0</span> <small>puntos</small></div>
-                        <span class="turn-pill" id="p1-turn" hidden>Le toca</span>
-                    </div>
-                </div>
-                <div class="metrics-grid">
-                    <div class="card card-data">
-                        <h3>Mazo</h3>
-                        <div class="metric" id="deck-count">46</div>
-                    </div>
-                    <div class="card card-data">
-                        <h3>Descartes</h3>
-                        <div class="metric" id="discard-count">0</div>
-                    </div>
-                    <div class="card card-data">
-                        <h3>Bote</h3>
-                        <div class="metric"><span id="pile-points">0</span> <small>pts</small></div>
-                    </div>
-                </div>
-            </section>
-
-            <hr class="divider solo-juego">
-
-            <section class="control-group solo-juego">
-                <h2>Qué ha pasado</h2>
-                <p id="last-action-log" class="action-log">El reactor está vacío.</p>
-                <p id="last-synthesis-chip" class="last-synthesis" hidden></p>
-            </section>
-
-            <hr class="divider">
-
-            <details class="custom-details">
-                <summary>Reglas del juego</summary>
-                <div class="details-content">
-                    <ol class="rules-list">
-                        <li><strong>Carga cero.</strong> Juega una carta por turno en el reactor. Cuando la carga neta llega a <strong>0</strong>, has formado un compuesto y ganas 1 punto por carta del reactor.</li>
-                        <li><strong>Solo dos elementos.</strong> Un catión, con carga positiva (los metales), y un anión, con carga negativa (los no metales). Cuando entran los dos, el reactor solo admite esos dos.</li>
-                        <li><strong>El hidrógeno</strong> actúa con <strong>+1</strong> frente a los no metales (Cl, S, O) y con <strong>−1</strong> frente a los metales.</li>
-                        <li><strong>Combo directo.</strong> Con el reactor vacío, marca de 2 a 5 cartas de tu mano que formen un compuesto completo y juégalas a la vez.</li>
-                        <li><strong>Nombra rápido (+3 puntos).</strong> Si tu compuesto tiene 3 átomos o más (o era un combo), tienes que nombrarlo o formularlo. Si fallas, tu rival puede contestar y llevarse los puntos.</li>
-                        <li><strong>Cartas especiales.</strong> <em>Catalizador</em>: repite el último átomo. <em>Electrólisis</em>: quita el último átomo. <em>Isótopo comodín</em>: copia un elemento que ya esté en el reactor.</li>
-                        <li><strong>Inestabilidad.</strong> Si pasan 3 turnos seguidos sin añadir átomos (cambiando cartas o con Electrólisis), el compuesto a medias se descompone y nadie se lleva el bote.</li>
-                        <li><strong>Final.</strong> La partida acaba cuando se termina el mazo y un jugador se queda sin cartas.</li>
-                    </ol>
-                    <p class="field-hint">Teclado: <kbd>1</kbd>–<kbd>5</kbd> juegan una carta y <kbd>1</kbd>–<kbd>3</kbd> eligen respuesta en los retos.</p>
-                </div>
-            </details>
-
-            <details class="custom-details">
-                <summary>Simplificaciones del juego</summary>
-                <div class="details-content">
-                    <ul class="key-ideas">
-                        <li>El juego trata todos los compuestos como si estuvieran formados por iones, pero en el agua, el cloruro de hidrógeno o el sulfuro de dihidrógeno <strong>no hay iones</strong>: son compuestos moleculares.</li>
-                        <li>Solo aparecen compuestos binarios de 11 elementos, y algunos (como FeH<sub>3</sub> o CuH<sub>2</sub>) apenas existen fuera del laboratorio.</li>
-                        <li>Las cartas especiales son reglas del juego, no lo que hacen de verdad un catalizador o una electrólisis.</li>
-                    </ul>
-                </div>
-            </details>
-        </aside>
-
-        <!-- ── ZONA DE JUEGO ─────────────────────────────────────── -->
-        <main class="simulation-panel">
-            <div class="sim-dock">
-                <button id="btn-open-codex" type="button" class="canvas-btn">◈ Cuaderno <span class="dock-count">(<span id="codex-counter">0</span>/<span id="codex-total">39</span>)</span></button>
-                <button id="btn-toggle-sound" type="button" class="canvas-btn" aria-pressed="true">🔊 Sonido</button>
-                <button id="btn-exit-match" type="button" class="canvas-btn solo-juego">✕ Salir</button>
+        <!-- ═══ MENÚ ═══ -->
+        <section class="menu solo-menu" aria-labelledby="menu-title">
+            <div class="hero">
+                <div class="hero-cards" aria-hidden="true" id="hero-cards"></div>
+                <h1 id="menu-title" class="hero-title">Carga cero</h1>
+                <p class="hero-sub">Junta <b class="t-pos">cationes</b> y <b class="t-neg">aniones</b> hasta que la carga neta sea <b class="t-zero">cero</b>… ¡y nombra lo que has creado!</p>
             </div>
 
-            <div class="board">
-                <!-- Pantalla de bienvenida -->
-                <section class="welcome solo-menu" aria-labelledby="welcome-title">
-                    <h2 id="welcome-title" class="welcome-title">Forma compuestos con carga cero</h2>
-                    <div class="welcome-example" aria-hidden="true">
-                        <div class="mini-card cat-METAL"><span class="mini-num">+2</span><span class="mini-sym">Ca</span></div>
-                        <span class="op">+</span>
-                        <div class="mini-card cat-NON_METAL"><span class="mini-num">−1</span><span class="mini-sym">Cl</span></div>
-                        <span class="op">+</span>
-                        <div class="mini-card cat-NON_METAL"><span class="mini-num">−1</span><span class="mini-sym">Cl</span></div>
-                        <span class="op">=</span>
-                        <div class="zero-badge">0</div>
-                    </div>
-                    <p class="welcome-result">CaCl<sub>2</sub> · dicloruro de calcio</p>
-                    <p class="welcome-text">Elige el nivel y el rival en el panel y pulsa <strong>Empezar partida</strong>.</p>
-                </section>
-
-                <!-- Tablero -->
-                <section class="game solo-juego" aria-label="Tablero">
-                    <p id="turn-strip" class="turn-strip" aria-hidden="true"></p>
-                    <div class="rival-strip">
-                        <span id="rival-label">Mano del rival:</span>
-                        <div id="opponent-hand-backs" class="mini-backs" aria-hidden="true"></div>
-                        <span id="rival-count" class="sr-only"></span>
+            <div class="menu-panels">
+                <div class="menu-panel">
+                    <h2 id="h-rival" class="panel-title">¿Contra quién juegas?</h2>
+                    <div class="tile-row" id="select-mode" role="radiogroup" aria-labelledby="h-rival">
+                        <button type="button" class="tile active" data-val="BOT" role="radio" aria-checked="true">
+                            <span class="tile-art" data-avatar="bot"></span><span class="tile-name">Robot</span><span class="tile-sub">un jugador</span>
+                        </button>
+                        <button type="button" class="tile" data-val="LOCAL" role="radio" aria-checked="false">
+                            <span class="tile-art tile-art-2"><span data-avatar="p0"></span><span data-avatar="p1"></span></span><span class="tile-name">Dos jugadores</span><span class="tile-sub">un dispositivo</span>
+                        </button>
+                        <button type="button" class="tile" data-val="P2P" role="radio" aria-checked="false">
+                            <span class="tile-art tile-emoji" aria-hidden="true">📡</span><span class="tile-name">En línea</span><span class="tile-sub">con un código</span>
+                        </button>
                     </div>
 
-                    <div id="synthesis-banner" class="synthesis-banner" hidden></div>
-
-                    <section id="reactor-zone" class="reactor-zone" aria-labelledby="reactor-formula">
-                        <div class="reactor-header">
-                            <p class="reactor-formula" id="reactor-formula">Reactor vacío</p>
-                            <div class="instability" title="Si pasan 3 turnos seguidos sin añadir átomos, el compuesto a medias se descompone">
-                                <span>Inestabilidad</span>
-                                <span id="stagnation-dots" class="stagnation-dots" aria-hidden="true">○○○</span>
-                                <span id="stagnation-text" class="sr-only">0 de 3</span>
-                            </div>
+                    <div class="solo-bot sub-option">
+                        <span class="sub-label" id="lbl-bot">¿Lo listo que es el robot?</span>
+                        <div class="chips" id="select-bot-level" role="radiogroup" aria-labelledby="lbl-bot">
+                            <button type="button" class="chip" data-val="APPRENTICE" role="radio" aria-checked="false">Aprendiz</button>
+                            <button type="button" class="chip active" data-val="CHEMIST" role="radio" aria-checked="true">Químico</button>
+                            <button type="button" class="chip" data-val="NOBEL" role="radio" aria-checked="false">Nobel</button>
                         </div>
+                    </div>
 
-                        <div class="reactor-core">
-                            <div class="slot-box slot-pos" id="slot-cation">
-                                <span class="slot-tag">▲ Catión (+)</span>
-                                <div class="slot-content" id="slot-cation-content">—</div>
-                            </div>
-                            <div class="charge-gauge" id="charge-gauge">
-                                <span class="charge-label">Carga neta</span>
-                                <span class="charge-value" id="net-charge-value">0</span>
-                            </div>
-                            <div class="slot-box slot-neg" id="slot-anion">
-                                <span class="slot-tag">▼ Anión (−)</span>
-                                <div class="slot-content" id="slot-anion-content">—</div>
-                            </div>
+                    <div id="p2p-panel" class="solo-p2p sub-option p2p-box">
+                        <button id="btn-create-room" type="button" class="chip big">Crear sala</button>
+                        <span class="p2p-or">o</span>
+                        <label class="sr-only" for="input-room-code">Código de una sala</label>
+                        <input type="text" id="input-room-code" maxlength="4" autocomplete="off" spellcheck="false" placeholder="CÓDIGO">
+                        <button id="btn-join-room" type="button" class="chip big">Unirse</button>
+                        <p id="p2p-code" class="p2p-code" hidden></p>
+                        <p id="p2p-status" class="p2p-status" role="status">Un dispositivo crea la sala y el otro escribe su código. Hace falta internet.</p>
+                    </div>
+                </div>
+
+                <div class="menu-panel">
+                    <h2 id="h-nivel" class="panel-title">Nivel de los retos</h2>
+                    <div class="tile-row tile-row-2" id="select-level" role="radiogroup" aria-labelledby="h-nivel">
+                        <button type="button" class="tile active" data-val="BASIC" role="radio" aria-checked="true">
+                            <span class="tile-art tile-formula">CaCl<sub>2</sub></span><span class="tile-name">Básico</span><span class="tile-sub">dicloruro de calcio</span>
+                        </button>
+                        <button type="button" class="tile" data-val="ADVANCED" role="radio" aria-checked="false">
+                            <span class="tile-art tile-formula">Fe<sub>2</sub>O<sub>3</sub></span><span class="tile-name">Avanzado</span><span class="tile-sub">también óxido de hierro(III)</span>
+                        </button>
+                    </div>
+                    <div class="sub-option">
+                        <span class="sub-label" id="lbl-tiempo">Tiempo para nombrar</span>
+                        <div class="chips" id="select-time" role="radiogroup" aria-labelledby="lbl-tiempo">
+                            <button type="button" class="chip active" data-val="8" role="radio" aria-checked="true">8 s</button>
+                            <button type="button" class="chip" data-val="15" role="radio" aria-checked="false">15 s</button>
+                            <button type="button" class="chip" data-val="0" role="radio" aria-checked="false">Sin prisa</button>
                         </div>
-                    </section>
-
-                    <section class="hand-zone" aria-labelledby="hand-owner-label">
-                        <div class="hand-controls">
-                            <h2 id="hand-owner-label" class="hand-label">Tu mano</h2>
-                            <div class="hand-buttons">
-                                <button id="btn-play-combo" type="button" class="action-btn accent" hidden>⚡ Jugar combo</button>
-                                <button id="btn-recycle" type="button" class="action-btn" disabled>↻ Cambiar marcadas (0/3)</button>
-                            </div>
-                        </div>
-                        <p id="reactor-hint" class="field-hint hand-hint">Pulsa una carta para jugarla. Con «Marcar» eliges cartas para un combo o para cambiarlas.</p>
-
-                        <div id="local-privacy-curtain" class="local-curtain" hidden>
-                            <p id="local-curtain-title">Turno del jugador 2</p>
-                            <button id="btn-reveal-local-hand" type="button" class="primary-btn">Ver mis cartas</button>
-                        </div>
-
-                        <div id="player-hand" class="cards-container"></div>
-                    </section>
-                </section>
-            </div>
-
-            <!-- Botón de tema -->
-            <button id="theme-btn" type="button" class="theme-btn" title="Cambiar tema" aria-label="Cambiar tema" aria-expanded="false">
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58
-                    c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96
-                    c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84
-                    c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33
-                    c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58
-                    C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61
-                    l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94
-                    l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54
-                    c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32
-                    c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z
-                    M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
-                </svg>
-            </button>
-            <div id="theme-panel" class="theme-panel" aria-hidden="true">
-                <p class="theme-panel-title">Tema visual</p>
-                <div class="theme-options">
-                    <button type="button" class="theme-opt" data-theme="marca"><span class="theme-swatch marca-swatch"></span>SimulaCiencia</button>
-                    <button type="button" class="theme-opt active" data-theme="dark"><span class="theme-swatch dark-swatch"></span>Oscuro</button>
-                    <button type="button" class="theme-opt" data-theme="light"><span class="theme-swatch light-swatch"></span>Claro</button>
-                    <button type="button" class="theme-opt" data-theme="contrast"><span class="theme-swatch contrast-swatch"></span>Alto contraste</button>
+                    </div>
+                    <label class="check-row">
+                        <input type="checkbox" id="check-blind">
+                        <span>Cartas misteriosas: algunas esconden el símbolo o el nombre</span>
+                    </label>
                 </div>
             </div>
 
-            <div id="anuncio" class="sr-only" aria-live="polite"></div>
-        </main>
+            <button id="btn-start-game" type="button" class="play-btn">¡A jugar!</button>
+        </section>
+
+        <!-- ═══ MESA DE JUEGO ═══ -->
+        <section class="table solo-juego" aria-label="Mesa de juego">
+
+            <!-- Rival -->
+            <div class="seat seat-top" id="seat-top">
+                <div class="player-tag">
+                    <span class="avatar" id="top-avatar"></span>
+                    <div class="player-info">
+                        <span class="player-name" id="top-name">Robot</span>
+                        <span class="player-score"><span id="top-score">0</span> <small>puntos</small></span>
+                    </div>
+                    <div class="bubble" id="top-bubble" hidden></div>
+                </div>
+                <div class="hand-backs" id="top-hand" aria-hidden="true"></div>
+                <span id="top-hand-count" class="sr-only"></span>
+            </div>
+
+            <!-- Centro: mazo, reactor y descartes -->
+            <div class="center">
+                <div class="pile" id="deck-pile" title="Mazo">
+                    <div class="pile-card back"></div>
+                    <span class="pile-label">Mazo <b id="deck-count">46</b></span>
+                </div>
+
+                <div class="reactor" id="reactor-zone">
+                    <div class="tray tray-pos" id="tray-pos">
+                        <span class="tray-label">▲ Catión (+)</span>
+                        <div class="tray-cards" id="tray-pos-cards"></div>
+                    </div>
+
+                    <div class="flask-wrap">
+                        <div class="flask" id="flask">
+                            <div class="flask-liquid"></div>
+                            <div class="flask-bubbles" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+                            <div class="flask-text">
+                                <span class="flask-label">Carga neta</span>
+                                <span class="flask-value" id="net-charge-value">0</span>
+                                <span class="flask-hint" id="net-charge-hint"></span>
+                            </div>
+                        </div>
+                        <p class="reactor-formula" id="reactor-formula">Reactor vacío</p>
+                        <div class="instability" title="Si pasan 3 turnos seguidos sin añadir átomos, el compuesto a medias se descompone">
+                            <span id="stagnation-dots" aria-hidden="true"></span>
+                            <span class="sr-only" id="stagnation-text"></span>
+                        </div>
+                    </div>
+
+                    <div class="tray tray-neg" id="tray-neg">
+                        <span class="tray-label">▼ Anión (−)</span>
+                        <div class="tray-cards" id="tray-neg-cards"></div>
+                    </div>
+                </div>
+
+                <div class="pile" id="discard-pile" title="Descartes">
+                    <div class="pile-card discard" id="discard-top"></div>
+                    <span class="pile-label">Descartes <b id="discard-count">0</b></span>
+                </div>
+            </div>
+
+            <!-- Yo -->
+            <div class="seat seat-bottom" id="seat-bottom">
+                <div class="seat-bar">
+                    <div class="player-tag">
+                        <span class="avatar" id="bottom-avatar"></span>
+                        <div class="player-info">
+                            <span class="player-name" id="bottom-name">Tú</span>
+                            <span class="player-score"><span id="bottom-score">0</span> <small>puntos</small></span>
+                        </div>
+                    </div>
+                    <p class="hand-hint" id="hand-hint">Toca una carta para echarla al reactor.</p>
+                    <div class="hand-buttons">
+                        <button id="btn-play-combo" type="button" class="action-btn combo" hidden>⚡ ¡Combo!</button>
+                        <button id="btn-recycle" type="button" class="action-btn" disabled>↻ Cambiar</button>
+                    </div>
+                </div>
+                <div id="player-hand" class="hand"></div>
+
+                <div id="local-privacy-curtain" class="curtain" hidden>
+                    <span class="curtain-avatar" id="curtain-avatar"></span>
+                    <p id="local-curtain-title">Turno del jugador 2</p>
+                    <button id="btn-reveal-local-hand" type="button" class="play-btn small">Ver mis cartas</button>
+                </div>
+            </div>
+
+            <div id="turn-toast" class="turn-toast" hidden></div>
+            <div id="fx-layer" class="fx-layer" aria-hidden="true"></div>
+        </section>
+
+        <div id="anuncio" class="sr-only" aria-live="polite"></div>
+    </main>
+</div>
+
+<!-- ═══ VENTANAS ═══ -->
+<div id="modal-choice" class="modal-backdrop" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="choice-title">
+        <h3 id="choice-title">Isótopo comodín</h3>
+        <p id="choice-desc" class="modal-desc">¿Qué elemento del reactor quieres copiar?</p>
+        <div id="choice-options" class="modal-options"></div>
+        <button id="btn-cancel-choice" type="button" class="action-btn">Cancelar</button>
     </div>
+</div>
 
-    <!-- ═══ VENTANAS ═══ -->
-    <div id="modal-valence" class="modal-backdrop" hidden>
-        <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="valence-modal-title">
-            <h3 id="valence-modal-title">Elige el número de oxidación</h3>
-            <p id="valence-modal-desc" class="modal-desc">¿Con qué número de oxidación entra este elemento?</p>
-            <div id="valence-options" class="modal-options"></div>
-            <button id="btn-cancel-valence" type="button" class="action-btn">Cancelar</button>
+<div id="modal-quiz" class="modal-backdrop quiz-backdrop" hidden>
+    <div class="modal-box quiz-box" role="dialog" aria-modal="true" aria-labelledby="quiz-badge" aria-describedby="quiz-prompt">
+        <div class="quiz-top">
+            <span id="quiz-who" class="quiz-who"></span>
+            <span id="quiz-badge" class="quiz-badge">¡Nombra rápido! +3</span>
+            <span id="quiz-timer" class="quiz-timer">8</span>
+        </div>
+        <div class="quiz-track" aria-hidden="true"><div id="quiz-timer-bar" class="quiz-fill"></div></div>
+        <p id="quiz-formula" class="quiz-formula"></p>
+        <p id="quiz-prompt" class="quiz-prompt"></p>
+        <div id="quiz-options" class="quiz-options"></div>
+    </div>
+</div>
+
+<div id="modal-codex" class="modal-backdrop" hidden>
+    <div class="modal-box modal-large" role="dialog" aria-modal="true" aria-labelledby="codex-title">
+        <div class="modal-header-row">
+            <h3 id="codex-title">📒 Cuaderno de compuestos · <span id="codex-modal-count">0</span>/<span id="codex-modal-total">39</span></h3>
+            <button id="btn-close-codex" type="button" class="action-btn">Cerrar</button>
+        </div>
+        <p class="modal-desc">Cada compuesto que formes tú se pega aquí como una pegatina. ¡Consíguelos todos!</p>
+        <div id="codex-grid" class="codex-grid"></div>
+    </div>
+</div>
+
+<div id="modal-rules" class="modal-backdrop" hidden>
+    <div class="modal-box modal-large" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+        <div class="modal-header-row">
+            <h3 id="rules-title">❓ Cómo se juega</h3>
+            <button id="btn-close-rules" type="button" class="action-btn">¡Entendido!</button>
+        </div>
+        <ol class="rules-steps">
+            <li><span class="step-num">1</span><div><b>Echa una carta al reactor en tu turno.</b> Los metales son <b class="t-pos">cationes</b> (+) y los no metales, <b class="t-neg">aniones</b> (−). El número de la carta es su número de oxidación.</div></li>
+            <li><span class="step-num">2</span><div><b>Cuando la carga neta llega a 0</b>, se forma el compuesto y quien echó la última carta se lleva 1 punto por carta del reactor.</div></li>
+            <li><span class="step-num">3</span><div><b>¡Nombra rápido!</b> Si el compuesto tiene 3 átomos o más, hay que nombrarlo o formularlo: +3 puntos. Si fallas, el rival puede robártelos.</div></li>
+        </ol>
+        <ul class="rules-more">
+            <li><b>Solo dos elementos</b> en cada compuesto: un catión y un anión.</li>
+            <li><b>Cartas con varios números</b> (Fe +2 +3, Cu +1 +2, H +1 −1): el reactor elige solo el que sirve para llegar a cero. El hidrógeno es catión con los no metales y anión con los metales.</li>
+            <li><b>Combo:</b> con el reactor vacío, marca de 2 a 5 cartas que formen un compuesto completo y échalas de golpe.</li>
+            <li><b>Cartas especiales:</b> ✨ Catalizador repite el último átomo · ⚡ Electrólisis lo quita · ⚛️ Isótopo comodín copia un elemento del reactor.</li>
+            <li><b>Cambiar:</b> si no puedes jugar, marca hasta 3 cartas y cámbialas. Si pasan 3 turnos sin añadir átomos, el compuesto a medias se descompone.</li>
+            <li><b>Final:</b> cuando se acaba el mazo y alguien se queda sin cartas. Gana quien tenga más puntos.</li>
+        </ul>
+        <p class="modal-desc">Teclado: <kbd>1</kbd>–<kbd>5</kbd> echan una carta y <kbd>1</kbd>–<kbd>3</kbd> eligen respuesta.</p>
+        <details class="simplif">
+            <summary>Simplificaciones del juego</summary>
+            <p>El juego trata todos los compuestos como si estuvieran formados por iones, pero en el agua, el cloruro de hidrógeno o el sulfuro de dihidrógeno <b>no hay iones</b>: son compuestos moleculares. Solo hay compuestos binarios de 11 elementos, y algunos (como FeH<sub>3</sub> o CuH<sub>2</sub>) apenas existen fuera del laboratorio. Las cartas especiales son reglas del juego, no lo que hacen de verdad un catalizador o una electrólisis.</p>
+        </details>
+    </div>
+</div>
+
+<div id="modal-gameover" class="modal-backdrop" hidden>
+    <div class="modal-box modal-large gameover-box" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
+        <div class="trophy" aria-hidden="true">🏆</div>
+        <h3 id="gameover-title" class="gameover-title">¡Fin de la partida!</h3>
+        <div id="gameover-podium" class="podium"></div>
+        <div class="match-report-box">
+            <h4>Compuestos formados</h4>
+            <ul id="gameover-compounds-list" class="match-compounds-list"></ul>
+        </div>
+        <div class="modal-options">
+            <button id="btn-copy-report" type="button" class="action-btn">📋 Copiar resumen</button>
+            <button id="btn-play-again" type="button" class="play-btn small">Jugar otra vez</button>
         </div>
     </div>
+</div>
 
-    <div id="modal-quiz" class="modal-backdrop" hidden>
-        <div class="modal-box quiz-box" role="dialog" aria-modal="true" aria-labelledby="quiz-badge" aria-describedby="quiz-prompt">
-            <div class="quiz-header">
-                <span id="quiz-badge" class="quiz-badge">Nombra rápido · +3 puntos</span>
-                <span id="quiz-timer" class="quiz-timer">6,0 s</span>
-            </div>
-            <div class="quiz-progress-track" aria-hidden="true"><div id="quiz-timer-bar" class="quiz-progress-fill"></div></div>
-            <p id="quiz-formula" class="quiz-formula"></p>
-            <p id="quiz-prompt" class="quiz-prompt"></p>
-            <div id="quiz-options" class="quiz-options"></div>
-        </div>
-    </div>
-
-    <div id="modal-codex" class="modal-backdrop" hidden>
-        <div class="modal-box modal-large" role="dialog" aria-modal="true" aria-labelledby="codex-title">
-            <div class="modal-header-row">
-                <h3 id="codex-title">Cuaderno de compuestos (<span id="codex-modal-count">0</span>/<span id="codex-modal-total">39</span>)</h3>
-                <button id="btn-close-codex" type="button" class="action-btn">Cerrar</button>
-            </div>
-            <p class="field-hint">Cada compuesto que formes tú en una partida queda apuntado aquí, en este navegador.</p>
-            <div id="codex-grid" class="codex-grid"></div>
-        </div>
-    </div>
-
-    <div id="modal-gameover" class="modal-backdrop" hidden>
-        <div class="modal-box modal-large" role="dialog" aria-modal="true" aria-labelledby="gameover-title">
-            <p class="subtitle">Fin de la partida</p>
-            <h3 id="gameover-title" class="gameover-title">Fin de la partida</h3>
-            <p id="gameover-summary" class="gameover-summary"></p>
-            <div class="match-report-box">
-                <h4>Compuestos formados</h4>
-                <ul id="gameover-compounds-list" class="match-compounds-list"></ul>
-            </div>
-            <div class="modal-options">
-                <button id="btn-copy-report" type="button" class="action-btn">📋 Copiar resumen</button>
-                <button id="btn-play-again" type="button" class="primary-btn">Volver al inicio</button>
-            </div>
-        </div>
-    </div>
-
-    <script src="js/elementos.js"></script>
-    <script src="js/nomenclatura.js"></script>
-    <script src="js/motor.js"></script>
-    <script src="js/red.js"></script>
-    <script src="js/interfaz.js"></script>
+<script src="js/elementos.js"></script>
+<script src="js/nomenclatura.js"></script>
+<script src="js/arte.js"></script>
+<script src="js/motor.js"></script>
+<script src="js/red.js"></script>
+<script src="js/interfaz.js"></script>
 </body>
 </html>
